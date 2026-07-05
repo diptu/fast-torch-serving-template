@@ -1,0 +1,45 @@
+# Defaults for app.core.config.Settings. Keys must match Settings' field
+# names exactly (case-sensitive) — pydantic-settings won't warn on a typo'd
+# or mismatched key here, it just silently has no effect.
+#
+# Precedence (highest first): explicit kwargs > environment variables (APP_*)
+# > .env file > this file > field defaults in Settings. Delete this file
+# entirely if you'd rather configure purely through environment variables —
+# it's optional and everything here already has a matching Settings default.
+#
+# Only static, non-secret defaults belong here. Secrets (admin/predict/
+# metrics tokens) and machine-/infra-specific values (concurrency limits
+# that depend on the host's CPU count, the OTel collector endpoint) live in
+# .env.example instead — see that file, and don't add either kind here,
+# since this file is meant to be committed.
+
+# --- Deployment ---
+environment: "development"
+log_level: "INFO"
+
+# --- Paths ---
+data_dir: "data"
+checkpoint_dir: "checkpoints"
+
+# --- MLflow experiment tracking ---
+mlflow_tracking_uri: "sqlite:///mlflow.db"
+mlflow_experiment_name: "mnist-cnn"
+mlflow_registered_model_name: "mnist-cnn"
+promotion_min_accuracy_improvement: 0.0
+promotion_max_recall_regression: 0.05
+promotion_max_calibration_regression: 0.05
+
+# --- Model / training ---
+device: "cpu"
+SEED: 42
+BATCH_SIZE: 64
+LEARNING_RATE: 0.001
+EPOCHS: 10
+num_classes: 10
+
+# --- Serving ---
+prediction_queue_timeout_seconds: 5.0
+predict_rate_limit: "60/minute"
+
+# --- Observability ---
+otel_service_name: "fast-torch-serving-template"

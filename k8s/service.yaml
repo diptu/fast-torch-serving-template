@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fast-torch-serving
+spec:
+  selector:
+    app: fast-torch-serving
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP

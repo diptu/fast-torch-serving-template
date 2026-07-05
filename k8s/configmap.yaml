@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fast-torch-serving-config
+data:
+  # Disables /docs, /redoc, /openapi.json (see app/core/config.py /
+  # app/main.py) so the schema isn't publicly discoverable in a real
+  # deployment. Set to "development" only for a debugging deployment.
+  APP_ENVIRONMENT: "production"
+  APP_LOG_LEVEL: "INFO"
+  APP_MLFLOW_TRACKING_URI: "sqlite:///mlflow.db"
+  APP_MLFLOW_EXPERIMENT_NAME: "mnist-cnn"
+  APP_DEVICE: "cpu"
+  # Comma-separated origins would need code changes to parse; this field is
+  # a JSON list — quote it as shown if you set it.
+  # APP_CORS_ALLOW_ORIGINS: '["https://your-frontend.example.com"]'
+  WEB_CONCURRENCY: "4"

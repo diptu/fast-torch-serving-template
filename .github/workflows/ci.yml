@@ -1,0 +1,47 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Replaces `pipx install uv`: also caches the uv-managed venv/download
+      # cache across runs, keyed on uv.lock — dependabot (github-actions
+      # ecosystem) keeps this action version current.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install Dependencies
+        run: uv sync --group train
+
+      - name: Run Linting and Formatting
+        run: make lint
+
+      - name: Run Static Analysis & Security Checks
+        run: make check
+
+      - name: Run Tests with Coverage
+        run: make test
+
+  docker-build-test:
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Build Docker Image
+        run: docker build -t fast-torch-serving:latest .

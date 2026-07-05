@@ -1,0 +1,113 @@
+[project]
+name = "fast-torch-serving-template"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11.9"
+dependencies = [
+    "fastapi[standard]>=0.139.0",
+    "gunicorn>=26.0.0",
+    "opentelemetry-api>=1.43.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.43.0",
+    "opentelemetry-instrumentation-fastapi>=0.64b0",
+    "opentelemetry-sdk>=1.43.0",
+    "prometheus-fastapi-instrumentator>=8.0.2",
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+    "slowapi>=0.1.10",
+    "torch>=2.12.1",
+    "torchvision>=0.27.1",
+    "uvicorn>=0.50.0",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.9.4",
+    "mypy>=2.1.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.20",
+]
+# Only needed for `make export-onnx` — not installed by default (`uv sync
+# --group onnx`) so the serving image/container doesn't carry it.
+onnx = [
+    "onnx>=1.17.0",
+    "onnxscript>=0.2.0",
+]
+# Only needed for local/Colab training (app/ml/train/, scripts/) — not
+# installed by default (`uv sync --group train`) so the serving image/
+# container doesn't carry mlflow's heavy transitive deps (pandas, pyarrow,
+# scipy, scikit-learn, matplotlib, ...) or the Colab-bridge-only
+# requests/websocket-client. The Dockerfile's `uv sync --frozen --no-dev`
+# naturally excludes this group already.
+train = [
+    "mlflow>=2.17.0",
+    "requests>=2.32.3",
+    "scikit-learn>=1.7.0",
+    "websocket-client>=1.8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# The default PyPI torch/torchvision wheels for Linux bundle the full CUDA
+# runtime (multi-GB). This template serves a small CNN on CPU in production
+# (training happens locally/Colab, not in the serving container), so Linux
+# builds — i.e. the Docker image — pull the much smaller CPU-only wheels
+# instead. macOS/Windows dev machines are unaffected (their default wheels
+# don't carry CUDA either way).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+lint.select = ["E", "F", "I", "N", "PL", "UP", "B", "S", "SIM", "ARG", "RET", "RUF", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# Magic-value assertions (status codes, expected counts) are normal test style.
+# assert (S101) and hardcoded dummy secrets/tokens (S105/S106) are normal too.
+# Fakes/stubs monkeypatched in to match a real signature routinely ignore
+# most of their arguments (ARG001/ARG002/ARG005) — that's the point of a stub.
+"tests/*" = ["PLR2004", "S101", "S105", "S106", "ARG001", "ARG002", "ARG005"]
+# print() is the intended CLI/notebook output here, not stray debug output.
+"scripts/*" = ["T20"]
+"app/ml/train/evaluate.py" = ["T20"]
+"app/ml/train/promote.py" = ["T20"]
+# The `uv init` scaffold stub — not the real entrypoint (that's app/main.py,
+# served via uvicorn), so its print() is fine as-is.
+"main.py" = ["T20"]
+# colab_server.py runs standalone inside a trusted Colab cell (see its module
+# docstring): every shell/subprocess call here uses hardcoded constants, not
+# attacker-reachable input, so the S6xx shell-injection family doesn't apply.
+"scripts/colab_server.py" = ["S602", "S603", "S605", "S607", "S108"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

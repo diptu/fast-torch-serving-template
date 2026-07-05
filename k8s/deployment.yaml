@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fast-torch-serving
+  labels:
+    app: fast-torch-serving
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fast-torch-serving
+  template:
+    metadata:
+      labels:
+        app: fast-torch-serving
+    spec:
+      # Pod-level: belt-and-suspenders alongside the container's `USER app`
+      # (see Dockerfile) — fails the pod outright if the image is ever
+      # changed to run as root, rather than silently allowing it.
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: api
+          # Published by .github/workflows/cd.yml — update the org/repo path
+          # to match where your fork actually pushes.
+          image: ghcr.io/diptu/fast-torch-serving-template:latest
+          ports:
+            - containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: fast-torch-serving-config
+            - secretRef:
+                name: fast-torch-serving-secrets
+                optional: true # both secret keys are optional — see secret.example.yaml
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            # Gates traffic on an actual checkpoint being loaded, not just
+            # the process being up — see app/main.py's /ready.
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: checkpoints
+              mountPath: /app/checkpoints
+            # readOnlyRootFilesystem above means these need their own
+            # writable mounts. tmp: gunicorn/Python scratch space (e.g.
+            # multipart upload spooling). shm: gunicorn's --worker-tmp-dir,
+            # set in the Dockerfile CMD — verified empirically that
+            # gunicorn 26's control socket (~/.gunicorn, i.e. /app/.gunicorn
+            # for this image's HOME) is the only other runtime write, and
+            # --no-control-socket in the Dockerfile CMD disables it, so no
+            # volume is needed for /app itself.
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        # No checkpoint is baked into the image (see Dockerfile) and this
+        # emptyDir starts empty too — the pod will serve from an untrained
+        # model until something puts a real model_latest.pth here. Replace
+        # with a PVC pre-populated by your training pipeline, or add an
+        # initContainer that pulls one from object storage/an MLflow
+        # registry before the main container starts.
+        - name: checkpoints
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
