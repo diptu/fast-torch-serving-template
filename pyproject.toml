@@ -27,7 +27,7 @@ dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.20",
+    "ruff>=0.16.0",
 ]
 # Only needed for `make export-onnx` — not installed by default (`uv sync
 # --group onnx`) so the serving image/container doesn't carry it.
