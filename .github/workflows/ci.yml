@@ -17,7 +17,7 @@ jobs:
       # cache across runs, keyed on uv.lock — dependabot (github-actions
       # ecosystem) keeps this action version current.
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
