@@ -1,0 +1,133 @@
+name: CD Pipeline
+
+on:
+  # Publish whenever CI passes on main — not on every push to main directly,
+  # so a broken build (failed lint/type-check/tests) never gets published.
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [main]
+  # Tag pushes let you cut a versioned release independently of "latest".
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    steps:
+      - name: Resolve commit SHA
+        id: sha
+        run: |
+          echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' }}
+            type=sha,format=long,prefix=sha-
+            type=semver,pattern={{version}}
+
+      # Build locally first (no push yet) so the scan and smoke test below
+      # gate the push — nothing reaches ghcr.io until both pass.
+      - name: Build image (local only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image for known vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.sha }}"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Smoke-test the built image
+        run: |
+          docker run -d --name smoke -p 8000:8000 \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.sha }}"
+
+          ok=""
+          for _ in $(seq 1 15); do
+            if curl -sf http://localhost:8000/health; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+
+          docker logs smoke
+          docker rm -f smoke
+
+          if [ -z "$ok" ]; then
+            echo "::error::Built image did not become healthy"
+            exit 1
+          fi
+
+      # Re-run is near-instant: same layers, pulled straight from the GHA
+      # cache populated above — this step just pushes what was already
+      # scanned and smoke-tested. build-args must match the build step
+      # above exactly, or this misses the cache and rebuilds from scratch.
+      - name: Push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.sha }}
+          cache-from: type=gha
+
+  # deploy:
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Deploy to <your infrastructure>
+  #       run: |
+  #         echo "Add your deployment step here — e.g. kubectl set image,"
+  #         echo "flyctl deploy, ECS service update, or SSH + docker compose pull."
+  #       # This template doesn't assume a hosting target, so it stops at
+  #       # "image is built, pushed, and verified healthy" and leaves the
+  #       # actual rollout to whatever infra you deploy this to.

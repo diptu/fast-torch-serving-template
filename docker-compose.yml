@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+    image: fast-torch-serving:latest
+    container_name: fast-torch-serving
+    ports:
+      - "8000:8000"
+    volumes:
+      # No checkpoint is baked into the image (see Dockerfile) — mount a
+      # locally trained one here to serve real predictions.
+      - ./checkpoints:/app/checkpoints
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Override with `WEB_CONCURRENCY=8 docker compose up` if needed.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped

@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fast-torch-serving
+spec:
+  # deployment.yaml requests 2+ replicas (hpa.yaml scales up to 10) — this
+  # keeps at least 1 available during voluntary disruptions (node drains,
+  # cluster upgrades), instead of a rollout/drain being able to take every
+  # replica down at once.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: fast-torch-serving
